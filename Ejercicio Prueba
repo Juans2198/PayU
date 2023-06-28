@@ -1,0 +1,186 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+#from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+
+#importo la información desde el archivo inicial de Excel.
+df=pd.read_excel('Base Prueba.xlsx',header=0,usecols=range(14))
+#Pregunta 1: Genere un Promedio de ventas Mensual
+
+#Promedio de venta mensual por cliente
+avg_mo_pc=pd.DataFrame(df[['Sales','Date']].groupby('Date').mean())
+
+# Promedio mensual de ventas para el año de análisis
+avg_sales=(df['Sales'].sum())/12
+
+#Pregunta 2: Basado en el promedio anterior indique Growth en % y en ventas
+#Es importante aclarar acá se hará cálculo de growth en terminos de ventas totales
+#mensuales, número de clientes mensuales y promedio de venta mensual por cliente.		
+
+#Total ventas mensuales
+sum_mo=pd.DataFrame(df[['Sales','Date']].groupby('Date').sum())
+
+#Total costos mensuales
+cost_mo=pd.DataFrame(df[['Total Costs','Date']].groupby('Date').sum())
+
+# Total de clientes por mes
+cnt_cl_mo=pd.DataFrame(df[['nombre cliente','Date']].groupby('Date').count())
+
+#cálculos de Growth por promedio de ventas mensual por cliente
+avg_mo_pc['Growth']=avg_mo_pc['Sales']-avg_mo_pc['Sales'].shift()
+avg_mo_pc['%Growth']=(avg_mo_pc['Sales'].pct_change())*100
+
+#cálculos de Growth por total de ventas mensuales
+sum_mo['Growth']=sum_mo['Sales']-sum_mo['Sales'].shift()
+sum_mo['%Growth']=(sum_mo['Sales'].pct_change())*100
+
+#cálculos de Growth por número de clientes mensual
+cnt_cl_mo['Growth']=cnt_cl_mo['nombre cliente']-cnt_cl_mo['nombre cliente'].shift()
+cnt_cl_mo['%Growth']=(cnt_cl_mo['nombre cliente'].pct_change())*100
+
+plt.figure(figsize=(20, 20))
+plt.subplot(2,2,1)
+plt.plot(sum_mo.index, sum_mo['Sales'], label='Sales')
+plt.xlabel('Fecha')
+plt.ylabel('Ventas')
+#plt.xticks(rotation=90)
+plt.title('Ventas Totales')
+plt.legend()
+
+plt.subplot(2,2,2)
+plt.plot(avg_mo_pc.index, avg_mo_pc['Sales'], label='Prom')
+
+plt.xlabel('Fecha')
+plt.ylabel('Promedio')
+#plt.xticks(rotation=90)
+plt.title('Prom. venta mensual por cliente')
+plt.legend()
+
+plt.subplot(2,2,3)
+plt.plot(cnt_cl_mo.index, cnt_cl_mo['nombre cliente'], label='Cantidad')
+plt.xlabel('Fecha')
+plt.ylabel('Cantidad')
+#plt.xticks(rotation=90)
+plt.title('Cantidad Clientes')
+plt.legend()
+
+plt.subplot(2,2,4)
+plt.plot(cost_mo.index, cost_mo['Total Costs'], label='Costs')
+plt.xlabel('Fecha')
+plt.ylabel('Costos')
+#plt.xticks(rotation=90)
+plt.title('Total Costs')
+plt.legend()
+
+
+plt.show()
+
+
+#Pregunta 3: Realice una Proyeccion hasta 2025
+#Se hacen 2 proyecciones por medio de suavizado exponencial
+#Holt Winters, pues este metodo presentó el ajuste más cercano al dataset inicial
+
+model_s = ExponentialSmoothing(sum_mo['Sales'], trend='mul', seasonal=None)
+model_c = ExponentialSmoothing(cost_mo['Total Costs'], trend='mul', seasonal=None)
+
+model_s_fit = model_s.fit()
+model_c_fit = model_c.fit()
+
+forecast_s_hw = model_s_fit.forecast(21)
+forecast_s_hw = np.maximum(forecast_s_hw, 0)
+forecast_c_hw = model_c_fit.forecast(21)
+forecast_c_hw = np.maximum(forecast_c_hw, 0)
+
+index = pd.date_range(start=(sum_mo.index[-1] + pd.DateOffset(months=1)), 
+                      periods=21, freq='MS')
+
+
+forecast_s_df_hw = pd.DataFrame(index=index)
+forecast_s_df_hw['Sales'] = forecast_s_hw
+forecast_c_df_hw = pd.DataFrame(index=index)
+forecast_c_df_hw['Total Costs'] = forecast_c_hw
+
+tot_df_s_hw = pd.concat([sum_mo, forecast_s_df_hw])
+tot_df_c_hw = pd.concat([cost_mo, forecast_c_df_hw])
+
+tot_df=pd.merge(tot_df_s_hw,tot_df_c_hw,left_index=True,right_index=True)[
+    ['Sales','Total Costs']]
+
+
+tot_df['Margin']=tot_df['Sales']-tot_df['Total Costs']
+tot_df['% GM']=(tot_df['Sales']-tot_df['Total Costs'])/tot_df['Sales']*100
+
+plt.figure(figsize=(15, 10))
+
+plt.subplot(2,2,1)
+plt.plot(tot_df.index, tot_df['Sales'], label='Sales')
+plt.plot(forecast_s_df_hw.index, forecast_s_df_hw['Sales'],
+         label='Proyección Holt-Winters')
+plt.xlabel('Fecha')
+plt.ylabel('Ventas')
+#plt.xticks(rotation=90)
+plt.title('Proyección de ventas')
+plt.legend()
+
+plt.subplot(2,2,2)
+plt.plot(tot_df.index, tot_df['Total Costs'], label='Costos')
+plt.plot(forecast_c_df_hw.index, forecast_c_df_hw['Total Costs'],
+         label='Proyección Holt-Winters')
+plt.xlabel('Fecha')
+plt.ylabel('Ventas')
+#plt.xticks(rotation=90)
+plt.title('Proyección de Costos')
+plt.legend()
+plt.tight_layout()
+
+plt.subplot(2,2,3)
+plt.plot(tot_df.index, tot_df['Margin'], label='Margin')
+plt.xlabel('Fecha')
+plt.ylabel('Ventas')
+#plt.xticks(rotation=90)
+plt.title('Margin')
+plt.legend()
+plt.tight_layout()
+
+plt.subplot(2,2,4)
+plt.plot(tot_df.index, tot_df['% GM'], label='% GM')
+plt.xlabel('Fecha')
+plt.ylabel('Ventas')
+#plt.xticks(rotation=90)
+plt.title('%GM')
+plt.legend()
+plt.tight_layout()
+
+plt.show()
+
+#Pregunta 6: Realice una Variacion % anual por cada uno de los meses
+df_mo=pd.DataFrame(tot_df['Sales'])
+df_mo['Year']=df_mo.index.year
+df_mo['Month']=df_mo.index.strftime('%B')
+df_mo.set_index(tot_df.index.month,inplace=True)
+tot_df_mo=pd.merge(df_mo,df_mo,how='inner',left_index=True,right_index=True)
+tot_df_mo['% monthly by year']=((tot_df_mo['Sales_y']-tot_df_mo['Sales_x'])/tot_df_mo['Sales_x'])*100
+tot_df_mo=tot_df_mo[(((tot_df_mo['% monthly by year']!=0) & 
+                      (tot_df_mo['% monthly by year']<0)) & 
+                     (tot_df_mo['Year_y']==tot_df_mo['Year_x']+1))]
+tot_df_mo=tot_df_mo[['Sales_x','Year_x','Month_x','Year_y','Sales_y','% monthly by year']]
+tot_df_mo=tot_df_mo.rename(columns={'Sales_x':'Sales Año 1','Sales_y':'Sales Año 2',
+                            'Year_x':'Año 1','Year_y':'Año 2','Month_x':'Month'})
+
+#Pregunta 7: Genere el Margin
+df['Margin']=df['Sales']-df['Total Costs']
+
+#Pregunta 8: Genere el % GM
+df['% GM']=((df['Sales']-df['Total Costs'])/df['Sales'])*100
+
+#Pregunta 9: Genere una segmentcion propia.
+
+#Para la segmentacion se hará a partir del margen de los clientes 
+
+df['Segmento']=np.where(df['Margin']>0,'Rentable','No Rentable')
+tot_df_mo.reset_index(inplace=True)
+sum_mo.reset_index(inplace=True)
+df.to_excel('df.xlsx',index=False,encoding='latin1')
+tot_df_mo.to_excel('tot_df_mo.xlsx',index=False,encoding='latin1')
+sum_mo.to_excel('sum_mo.xlsx',index=False,encoding='latin1')
